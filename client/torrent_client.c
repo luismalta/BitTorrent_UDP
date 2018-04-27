@@ -10,10 +10,42 @@
 #include <netinet/in.h>
 #include <pthread.h>
 
+#define SizeBuffer 1024
+
 int conta = 0;
 int n_arg;
 int porta_cliente, porta_servidor, op =0;
-//char ip;
+FILE *arquivo_entrada;
+char nome_arquivo[200];
+
+//==============================================================================
+//Leitura do arquivo
+//==============================================================================
+void ler_arquivo(char nome_arquivo[]){
+
+
+	arquivo_entrada = fopen(nome_arquivo, "rb");
+	if(!arquivo_entrada){
+		printf("O arquivo não existe\n");
+	}
+
+
+}
+
+//==============================================================================
+//Escrita do arquivo
+//==============================================================================
+void escrever_arquivo(char nome_arquivo[]){
+  char src[10] = "_1";
+  strcat(nome_arquivo, src);
+
+	arquivo_entrada = fopen(nome_arquivo, "wb");
+	if(!arquivo_entrada){
+		printf("O arquivo não existe\n");
+	}
+
+}
+
 //==============================================================================
 //Função de Cliente
 //==============================================================================
@@ -26,6 +58,9 @@ void * client_function(){
   	int client_socket;
   	struct sockaddr_in serv_addr;
   	char str[4096];
+    char bufferEntrada[17];
+    int bytesRecebidos;
+
 
   	if(n_arg < 3){
   		printf("Uso correto: endereco IP - porta\n");
@@ -44,6 +79,8 @@ void * client_function(){
   	serv_addr.sin_family = AF_INET;
   	serv_addr.sin_port = htons(porta_cliente);
 
+
+
   	connector = connect(client_socket, (const struct sockaddr*) &serv_addr, sizeof(serv_addr));
   	if(connector < 0){
   		fprintf(stderr, ". Falha na conecao\n");
@@ -52,24 +89,27 @@ void * client_function(){
   		printf("Conectado com: \n");
   	}
 
-  	while(1){
-  		printf("Mensagem: ");
-  		fgets(str, sizeof(str), stdin);
-  		escrever_bytes = write(client_socket, str, sizeof(str));
+
+  		printf("Requisitar arquivo\n");
+      scanf("%s", nome_arquivo);
+
+      int addr_len = sizeof(serv_addr);
+  		//fgets(nome_arquivo, sizeof(nome_arquivo), stdin);
+  		escrever_bytes = write(client_socket, nome_arquivo, sizeof(nome_arquivo));
   		if(escrever_bytes == 0){
   			printf("Erro no write: %s\n",strerror(errno));
   			printf("Nada escrito.\n");
+        close(client_socket);
 
   		}
 
-  		ler_bytes = read(client_socket, str, sizeof(str));
-  		if(ler_bytes <= 0){
-  			printf("Erro no read: %s\n", strerror(errno));
+  		escrever_arquivo(nome_arquivo);
 
-  		}
-      printf("Cliente: %s", str);
+      bytesRecebidos = recvfrom(client_socket, &bufferEntrada, 17, 0,(struct sockaddr *) &serv_addr, &addr_len);
 
-  	}
+      fwrite(&bufferEntrada,sizeof(char),bytesRecebidos,arquivo_entrada);
+
+
   	close(client_socket);
   }
 
@@ -84,6 +124,9 @@ void * server_function(){
 	ssize_t ler_bytes, escrever_bytes;
 	socklen_t clilen;
 	char str[4096];
+  int bytesEnviados, rc;
+
+
 
 
 
@@ -139,15 +182,46 @@ void * server_function(){
 		printf("Conexao recebida de %s\n", inet_ntoa(cli_addr.sin_addr));
 	}
 
-while(1){
 
-	ler_bytes = read(sock, str, sizeof(str));
+
+	ler_bytes = read(sock, nome_arquivo, sizeof(nome_arquivo));
 	if(ler_bytes <= 0){
 		printf("Erro no read: %s\n", strerror(errno));
-
 	}
 
-	printf("Cliente: %s", str);
+  ler_arquivo(nome_arquivo);
+  printf("Saiu ler arquivo\n");
+
+  fseek(arquivo_entrada,0,SEEK_END);
+  long long tamanhoArquivo = ftell(arquivo_entrada);
+  printf("%lld\n", tamanhoArquivo);
+  fseek(arquivo_entrada,0,SEEK_SET);
+
+  printf("Pegou tamnho\n");
+
+  char bufferEnvio[tamanhoArquivo];
+  memset(bufferEnvio,0x0,tamanhoArquivo);
+
+  fread(&bufferEnvio, tamanhoArquivo, 1, arquivo_entrada);
+
+  bytesEnviados = sendto(sock, bufferEnvio, tamanhoArquivo, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+
+  printf("Enviou bytes\n");
+  //verifica se conseguiu enviar
+  if(bytesEnviados<0) {
+    printf("ERROR: 01\n");
+    printf("Cannot send data\n");
+    close(sock);
+    exit(1);
+  }
+
+  if(rc<0) {
+    printf("Cannot send data\n");
+    close(sock);
+    exit(1);
+  }
+
+	printf("Enviou\n");
 
 	printf("Mensagem: ");
 	fgets(str, sizeof(str), stdin);
@@ -157,7 +231,7 @@ while(1){
 		printf("Nada escrito.\n");
 
 	}
-}
+
 
 
 	close(sock);
