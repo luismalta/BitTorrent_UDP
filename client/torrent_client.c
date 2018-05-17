@@ -148,7 +148,7 @@ void * client_function(){
 				bytesRecebidos = recvfrom(client_socket, &bufferEntrada, SizeBuffer+3, 0,(struct sockaddr *) &serv_addr, &addr_len);
 				fwrite(&bufferEntrada,sizeof(char),bytesRecebidos-3,arquivo_entrada);
 
-        printf("numeroPacote: %x   Buffer: %x\n", numeroPacote, bufferEntrada[bytesRecebidos-1]);
+        printf("numeroPacote: %d   Buffer: %d\n", numeroPacote, bufferEntrada[bytesRecebidos]);
         if(numeroPacote > bufferEntrada[bytesRecebidos-1]){
           printf("PACOTE DUPLICADO, foi descartado\n");
           printf("ACK ENVIADO!!!\n");
@@ -182,7 +182,7 @@ void * client_function(){
 				// 	break;
 				// }
 
-				if(bufferEntrada[bytesRecebidos-2] == '1'){
+				if(bufferEntrada[bytesRecebidos-3] == '1'){
           printf("%x\n", bufferEntrada[bytesRecebidos-1]);
 					fclose(arquivo_entrada);
 					printf("Saiu do if buffer igual a 1\n");
@@ -297,10 +297,8 @@ void * server_function(){
 			fread(&bufferEnvio, SizeBuffer, 1, arquivo_entrada);
 			bufferEnvio[SizeBuffer] = '0';
 			bufferEnvio[SizeBuffer+1] = doChecksum(bufferEnvio, SizeBuffer);
-			bufferEnvio[SizeBuffer+2] = cont;
+			bufferEnvio[SizeBuffer+2] = cont++;
 
-      printf("cont: %d\n", cont);
-      cont++;
       cont %= 128;
 
 
@@ -314,7 +312,7 @@ void * server_function(){
 		  }
       int addr_len = sizeof(serv_addr);
       resposta = recvfrom(sock, &bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, &addr_len);
-      if(bufferResposta[0] == 2){
+      if(bufferResposta[0] == 0){
         bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
       }
 
@@ -331,9 +329,8 @@ void * server_function(){
 			fread(&bufferEnvio, SizeBuffer, 1, arquivo_entrada);
 			bufferEnvio[bytes_restantes] = '1';
 			bufferEnvio[bytes_restantes+1] = doChecksum(bufferEnvio, bytes_restantes);
-			bufferEnvio[bytes_restantes+2] = cont;
+			bufferEnvio[bytes_restantes+2] = cont++;
 
-      cont++;
       cont %= 128;
 
 			bytesEnviados = sendto(sock, bufferEnvio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
