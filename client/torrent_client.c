@@ -18,6 +18,45 @@ int porta_cliente, porta_servidor, op =0;
 FILE *arquivo_entrada;
 char nome_arquivo[200];
 
+
+int checkcheck(char buffer[], int tamanho){
+
+  int i;
+  char check=0;
+  for(i=0 ; i < tamanho -2 ; i++){
+
+    check += buffer[i];
+    check &= 127;
+  }
+  printf("Verificando Checksum...\n");
+  printf("Checksum recebido: 0x%x\n",buffer[tamanho-1]);
+  printf("Checksum calculado: 0x%x\n",check);
+
+  if(buffer[tamanho-1] == (check)){
+      printf("Pacote não violado!\n");
+      return 1;
+  }
+
+  else{
+      printf("Pacote violado!\n");
+      return 0;
+  }
+
+
+}
+
+char doChecksum(char data[], int tamanho){
+
+  int i;
+  char checksum = 0;
+  for(i = 0 ; i<tamanho; i++){
+
+    checksum += data[i];
+    checksum &= 127;
+  }
+  return checksum;
+}
+
 //==============================================================================
 //Leitura do arquivo
 //==============================================================================
@@ -55,11 +94,13 @@ void * client_function(){
   if(op == 1){
     int connector;
   	ssize_t ler_bytes, escrever_bytes;
+    ssize_t resposta;
   	int client_socket;
   	struct sockaddr_in serv_addr;
   	char str[4096];
-    char bufferEntrada[17];
+    char bufferEntrada[SizeBuffer + 1], bufferResposta[2];
     int bytesRecebidos;
+    char numeroPacote = 0;
 
 
   	if(n_arg < 3){
@@ -75,7 +116,7 @@ void * client_function(){
   	}
 
   	bzero(&serv_addr, sizeof(serv_addr));
-  	//porta = atoi(argv[2]);
+
   	serv_addr.sin_family = AF_INET;
   	serv_addr.sin_port = htons(porta_cliente);
 
@@ -94,20 +135,64 @@ void * client_function(){
       scanf("%s", nome_arquivo);
 
       int addr_len = sizeof(serv_addr);
-  		//fgets(nome_arquivo, sizeof(nome_arquivo), stdin);
-  		escrever_bytes = write(client_socket, nome_arquivo, sizeof(nome_arquivo));
-  		if(escrever_bytes == 0){
-  			printf("Erro no write: %s\n",strerror(errno));
-  			printf("Nada escrito.\n");
-        close(client_socket);
 
-  		}
+			escrever_bytes = write(client_socket, nome_arquivo, sizeof(nome_arquivo));
+			if(escrever_bytes == 0){
+				printf("Erro em manda o nome do arquivo\n");
+				close(client_socket);
+			}
 
-  		escrever_arquivo(nome_arquivo);
+			escrever_arquivo(nome_arquivo);
+			while(1){
+				printf("Entrou no while cliente\n");
+				bytesRecebidos = recvfrom(client_socket, &bufferEntrada, SizeBuffer+3, 0,(struct sockaddr *) &serv_addr, &addr_len);
+				fwrite(&bufferEntrada,sizeof(char),bytesRecebidos-3,arquivo_entrada);
 
-      bytesRecebidos = recvfrom(client_socket, &bufferEntrada, 17, 0,(struct sockaddr *) &serv_addr, &addr_len);
+        printf("numeroPacote: %x   Buffer: %x\n", numeroPacote, bufferEntrada[bytesRecebidos-1]);
+        if(numeroPacote > bufferEntrada[bytesRecebidos]){
+          printf("PACOTE DUPLICADO, foi descartado\n");
+          printf("ACK ENVIADO!!!\n");
+          bufferResposta[0] = 1;
+          bufferResposta[1] = numeroPacote;
+          resposta = sendto(client_socket, bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
+          continue;
+        }
 
-      fwrite(&bufferEntrada,sizeof(char),bytesRecebidos,arquivo_entrada);
+				if(bufferEntrada[bytesRecebidos-2] == '0'){
+          if(!checkcheck(bufferEntrada,bytesRecebidos)){
+            printf("NAK N = %d ENVIADO!!!\n",numeroPacote);
+
+            bufferResposta[0] = 2;
+            bufferResposta[1] = numeroPacote;
+            resposta = sendto(client_socket, bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
+  					continue;
+  				} else {
+            printf("ACK N = %d ENVIADO!!!\n",numeroPacote);
+            bufferResposta[0] = 1;
+            bufferResposta[1] = numeroPacote;
+            resposta = sendto(client_socket, bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
+          }
+        }
+
+        numeroPacote++;
+        numeroPacote %= 128;
+				// if(bytesRecebidos < SizeBuffer){
+				// 	fclose(arquivo_entrada);
+				// 	printf("Saiu do if buffer menor\n");
+				// 	break;
+				// }
+
+				if(bufferEntrada[bytesRecebidos-2] == '1'){
+          printf("%x\n", bufferEntrada[bytesRecebidos-1]);
+					fclose(arquivo_entrada);
+					printf("Saiu do if buffer igual a 1\n");
+					break;
+				}
+
+
+			}
+
+
 
 
   	close(client_socket);
@@ -123,9 +208,12 @@ void * server_function(){
 	struct sockaddr_in serv_addr, cli_addr;
 	ssize_t ler_bytes, escrever_bytes;
 	socklen_t clilen;
+  ssize_t resposta;
 	char str[4096];
-  int bytesEnviados, rc;
-
+  int bytesEnviados,bytes_restantes, rc;
+	int transferencia_completa = 0, quantidade_bytes_enviados = 0, numero_pacotes_enviados = 0;
+	char bufferEnvio[SizeBuffer+3],bufferResposta[2];
+	char cont = 0;
 
 
 
@@ -193,43 +281,71 @@ void * server_function(){
   printf("Saiu ler arquivo\n");
 
   fseek(arquivo_entrada,0,SEEK_END);
-  long long tamanhoArquivo = ftell(arquivo_entrada);
-  printf("%lld\n", tamanhoArquivo);
+  long long tamanho_arquivo = ftell(arquivo_entrada);
+  printf("%lld\n", tamanho_arquivo);
   fseek(arquivo_entrada,0,SEEK_SET);
 
   printf("Pegou tamnho\n");
 
-  char bufferEnvio[tamanhoArquivo];
-  memset(bufferEnvio,0x0,tamanhoArquivo);
+	while(1){
+		printf("Entrou no while servidor\n");
+		if(transferencia_completa) break;
 
-  fread(&bufferEnvio, tamanhoArquivo, 1, arquivo_entrada);
+		if(quantidade_bytes_enviados + SizeBuffer < tamanho_arquivo){
+			printf("Entrou if pacote tamanho normal\n");
 
-  bytesEnviados = sendto(sock, bufferEnvio, tamanhoArquivo, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+			fread(&bufferEnvio, SizeBuffer, 1, arquivo_entrada);
+			bufferEnvio[SizeBuffer+1] = '0';
+			bufferEnvio[SizeBuffer+2] = doChecksum(bufferEnvio, SizeBuffer);
+			bufferEnvio[SizeBuffer+3] = cont++;
 
-  printf("Enviou bytes\n");
-  //verifica se conseguiu enviar
-  if(bytesEnviados<0) {
-    printf("ERROR: 01\n");
-    printf("Cannot send data\n");
-    close(sock);
-    exit(1);
-  }
 
-  if(rc<0) {
-    printf("Cannot send data\n");
-    close(sock);
-    exit(1);
-  }
+			bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
 
-	printf("Enviou\n");
+			if(bytesEnviados<0) {
+		    printf("ERROR: 01\n");
+		    printf("Cannot send data\n");
+		    close(sock);
+		    exit(1);
+		  }
+      int addr_len = sizeof(serv_addr);
+      resposta = recvfrom(sock, &bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, &addr_len);
+      if(bufferResposta[0] == 0){
+        bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+      }
 
-	printf("Mensagem: ");
-	fgets(str, sizeof(str), stdin);
-	escrever_bytes = write(sock, str, sizeof(str));
-	if(escrever_bytes == 0){
-		printf("Erro no write: %s\n",strerror(errno));
-		printf("Nada escrito.\n");
+			numero_pacotes_enviados++;
+			quantidade_bytes_enviados += bytesEnviados;
 
+			memset(bufferEnvio,0x0, SizeBuffer);
+
+		} else {
+			printf("Entrou else pacote menor\n");
+			bytes_restantes = tamanho_arquivo - quantidade_bytes_enviados;
+			memset(bufferEnvio,0x0,SizeBuffer);
+
+			fread(&bufferEnvio, SizeBuffer, 1, arquivo_entrada);
+			bufferEnvio[bytes_restantes+1] = '1';
+			bufferEnvio[bytes_restantes+2] = doChecksum(bufferEnvio, bytes_restantes);
+			bufferEnvio[bytes_restantes+3] = cont++;
+
+			bytesEnviados = sendto(sock, bufferEnvio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+
+			if(bytesEnviados<0) {
+		    printf("ERROR: 01\n");
+		    printf("Cannot send data\n");
+		    close(sock);
+		    exit(1);
+		  }
+
+
+
+			numero_pacotes_enviados++;
+			quantidade_bytes_enviados += bytesEnviados;
+
+			memset(bufferEnvio,0x0, SizeBuffer);
+			transferencia_completa = 1;
+		}
 	}
 
 
