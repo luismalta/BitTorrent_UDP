@@ -98,7 +98,7 @@ void * client_function(){
   	int client_socket;
   	struct sockaddr_in serv_addr;
   	char str[4096];
-    char bufferEntrada[SizeBuffer + 2], bufferResposta[2];
+    char bufferEntrada[SizeBuffer + 3], bufferResposta[2];
     int bytesRecebidos;
     char numeroPacote = 0;
 
@@ -145,11 +145,11 @@ void * client_function(){
 			escrever_arquivo(nome_arquivo);
 			while(1){
 				printf("Entrou no while cliente\n");
-				bytesRecebidos = recvfrom(client_socket, &bufferEntrada, SizeBuffer+2, 0,(struct sockaddr *) &serv_addr, &addr_len);
-				fwrite(&bufferEntrada,sizeof(char),bytesRecebidos-2,arquivo_entrada);
+				bytesRecebidos = recvfrom(client_socket, &bufferEntrada, SizeBuffer+3, 0,(struct sockaddr *) &serv_addr, &addr_len);
+				fwrite(&bufferEntrada,sizeof(char),bytesRecebidos-3,arquivo_entrada);
 
-        printf("numeroPacote: %d   Buffer: %d\n", numeroPacote, bufferEntrada[bytesRecebidos]);
-        if(numeroPacote > bufferEntrada[bytesRecebidos]){
+        printf("numeroPacote: %x   Buffer: %x\n", numeroPacote, bufferEntrada[bytesRecebidos-1]);
+        if(numeroPacote > bufferEntrada[bytesRecebidos-1]){
           printf("PACOTE DUPLICADO, foi descartado\n");
           printf("ACK ENVIADO!!!\n");
           bufferResposta[0] = 1;
@@ -159,7 +159,7 @@ void * client_function(){
         }
 
 
-          if(!checkcheck(bufferEntrada,bytesRecebidos)){
+          if(!checkcheck(bufferEntrada,bytesRecebidos-1)){
             printf("NAK N = %d ENVIADO!!!\n",numeroPacote);
 
             bufferResposta[0] = 2;
@@ -212,7 +212,7 @@ void * server_function(){
 	char str[4096];
   int bytesEnviados,bytes_restantes, rc;
 	int transferencia_completa = 0, quantidade_bytes_enviados = 0, numero_pacotes_enviados = 0;
-	char bufferEnvio[SizeBuffer+2],bufferResposta[2];
+	char bufferEnvio[SizeBuffer+3],bufferResposta[2];
 	char cont = 0;
 
 
@@ -297,12 +297,14 @@ void * server_function(){
 			fread(&bufferEnvio, SizeBuffer, 1, arquivo_entrada);
 			bufferEnvio[SizeBuffer] = '0';
 			bufferEnvio[SizeBuffer+1] = doChecksum(bufferEnvio, SizeBuffer);
-			bufferEnvio[SizeBuffer+2] = cont++;
+			bufferEnvio[SizeBuffer+2] = cont;
 
+      printf("cont: %d\n", cont);
+      cont++;
       cont %= 128;
 
 
-			bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+2, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+			bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
 
 			if(bytesEnviados<0) {
 		    printf("ERROR: 01\n");
@@ -312,8 +314,8 @@ void * server_function(){
 		  }
       int addr_len = sizeof(serv_addr);
       resposta = recvfrom(sock, &bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, &addr_len);
-      if(bufferResposta[0] == 0){
-        bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+2, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+      if(bufferResposta[0] == 2){
+        bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
       }
 
 			numero_pacotes_enviados++;
@@ -329,11 +331,12 @@ void * server_function(){
 			fread(&bufferEnvio, SizeBuffer, 1, arquivo_entrada);
 			bufferEnvio[bytes_restantes] = '1';
 			bufferEnvio[bytes_restantes+1] = doChecksum(bufferEnvio, bytes_restantes);
-			bufferEnvio[bytes_restantes+2] = cont++;
+			bufferEnvio[bytes_restantes+2] = cont;
 
+      cont++;
       cont %= 128;
-      
-			bytesEnviados = sendto(sock, bufferEnvio, bytes_restantes+2, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+
+			bytesEnviados = sendto(sock, bufferEnvio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
 
 			if(bytesEnviados<0) {
 		    printf("ERROR: 01\n");
