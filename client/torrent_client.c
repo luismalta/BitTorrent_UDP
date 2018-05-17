@@ -98,7 +98,7 @@ void * client_function(){
   	int client_socket;
   	struct sockaddr_in serv_addr;
   	char str[4096];
-    char bufferEntrada[SizeBuffer + 1], bufferResposta[2];
+    char bufferEntrada[SizeBuffer + 2], bufferResposta[2];
     int bytesRecebidos;
     char numeroPacote = 0;
 
@@ -145,10 +145,10 @@ void * client_function(){
 			escrever_arquivo(nome_arquivo);
 			while(1){
 				printf("Entrou no while cliente\n");
-				bytesRecebidos = recvfrom(client_socket, &bufferEntrada, SizeBuffer+3, 0,(struct sockaddr *) &serv_addr, &addr_len);
-				fwrite(&bufferEntrada,sizeof(char),bytesRecebidos-3,arquivo_entrada);
+				bytesRecebidos = recvfrom(client_socket, &bufferEntrada, SizeBuffer+2, 0,(struct sockaddr *) &serv_addr, &addr_len);
+				fwrite(&bufferEntrada,sizeof(char),bytesRecebidos-2,arquivo_entrada);
 
-        printf("numeroPacote: %x   Buffer: %x\n", numeroPacote, bufferEntrada[bytesRecebidos-1]);
+        printf("numeroPacote: %d   Buffer: %d\n", numeroPacote, bufferEntrada[bytesRecebidos]);
         if(numeroPacote > bufferEntrada[bytesRecebidos]){
           printf("PACOTE DUPLICADO, foi descartado\n");
           printf("ACK ENVIADO!!!\n");
@@ -158,7 +158,7 @@ void * client_function(){
           continue;
         }
 
-				if(bufferEntrada[bytesRecebidos-2] == '0'){
+
           if(!checkcheck(bufferEntrada,bytesRecebidos)){
             printf("NAK N = %d ENVIADO!!!\n",numeroPacote);
 
@@ -172,7 +172,7 @@ void * client_function(){
             bufferResposta[1] = numeroPacote;
             resposta = sendto(client_socket, bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
           }
-        }
+
 
         numeroPacote++;
         numeroPacote %= 128;
@@ -212,7 +212,7 @@ void * server_function(){
 	char str[4096];
   int bytesEnviados,bytes_restantes, rc;
 	int transferencia_completa = 0, quantidade_bytes_enviados = 0, numero_pacotes_enviados = 0;
-	char bufferEnvio[SizeBuffer+3],bufferResposta[2];
+	char bufferEnvio[SizeBuffer+2],bufferResposta[2];
 	char cont = 0;
 
 
@@ -295,12 +295,14 @@ void * server_function(){
 			printf("Entrou if pacote tamanho normal\n");
 
 			fread(&bufferEnvio, SizeBuffer, 1, arquivo_entrada);
-			bufferEnvio[SizeBuffer+1] = '0';
-			bufferEnvio[SizeBuffer+2] = doChecksum(bufferEnvio, SizeBuffer);
-			bufferEnvio[SizeBuffer+3] = cont++;
+			bufferEnvio[SizeBuffer] = '0';
+			bufferEnvio[SizeBuffer+1] = doChecksum(bufferEnvio, SizeBuffer);
+			bufferEnvio[SizeBuffer+2] = cont++;
+
+      cont %= 128;
 
 
-			bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+			bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+2, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
 
 			if(bytesEnviados<0) {
 		    printf("ERROR: 01\n");
@@ -311,7 +313,7 @@ void * server_function(){
       int addr_len = sizeof(serv_addr);
       resposta = recvfrom(sock, &bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, &addr_len);
       if(bufferResposta[0] == 0){
-        bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+        bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+2, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
       }
 
 			numero_pacotes_enviados++;
@@ -325,11 +327,13 @@ void * server_function(){
 			memset(bufferEnvio,0x0,SizeBuffer);
 
 			fread(&bufferEnvio, SizeBuffer, 1, arquivo_entrada);
-			bufferEnvio[bytes_restantes+1] = '1';
-			bufferEnvio[bytes_restantes+2] = doChecksum(bufferEnvio, bytes_restantes);
-			bufferEnvio[bytes_restantes+3] = cont++;
+			bufferEnvio[bytes_restantes] = '1';
+			bufferEnvio[bytes_restantes+1] = doChecksum(bufferEnvio, bytes_restantes);
+			bufferEnvio[bytes_restantes+2] = cont++;
 
-			bytesEnviados = sendto(sock, bufferEnvio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+      cont %= 128;
+      
+			bytesEnviados = sendto(sock, bufferEnvio, bytes_restantes+2, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
 
 			if(bytesEnviados<0) {
 		    printf("ERROR: 01\n");
