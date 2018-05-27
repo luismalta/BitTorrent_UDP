@@ -11,12 +11,18 @@
 #include <pthread.h>
 
 #define SizeBuffer 1024
+#define TEMPORIZADOR 1
 
 int conta = 0;
 int n_arg;
 int porta_cliente, porta_servidor, op =0;
 FILE *arquivo_entrada;
 char nome_arquivo[200];
+char bufferResposta[2];
+pthread_t threadTimer, threadResposta;
+int sock;
+struct sockaddr_in serv_addr, cli_addr;
+int limiteTempo, timer, recebeu;
 
 
 int checkcheck(char buffer[], int tamanho){
@@ -55,6 +61,28 @@ char doChecksum(char data[], int tamanho){
     checksum &= 127;
   }
   return checksum;
+}
+
+
+//função do temporizador, será executada em paralelo
+void *timerFun(){
+    sleep(TEMPORIZADOR);
+    limiteTempo = 1;
+    recebeu = 0;
+    timer = 0;
+}
+
+// função para cnacelar um thread
+int pthread_cancel(pthread_t thread);
+
+
+// função que espera epla resposta do servidor, será executada em paralelo
+void *respostaFunc(){
+  ssize_t resposta;
+  int addr_len = sizeof(serv_addr);
+  resposta = recvfrom(sock, &bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, &addr_len);
+  recebeu = 1;
+  timer = 0;
 }
 
 //==============================================================================
@@ -204,16 +232,16 @@ void * client_function(){
 //Função de Servidor
 //==============================================================================
 void * server_function(){
-  int server_socket, binder, listener, porta, sock;
-	struct sockaddr_in serv_addr, cli_addr;
+  int server_socket, binder, listener, porta;
 	ssize_t ler_bytes, escrever_bytes;
 	socklen_t clilen;
   ssize_t resposta;
 	char str[4096];
   int bytesEnviados,bytes_restantes, rc;
 	int transferencia_completa = 0, quantidade_bytes_enviados = 0, numero_pacotes_enviados = 0;
-	char bufferEnvio[SizeBuffer+3],bufferResposta[2];
+	char bufferEnvio[SizeBuffer+3];
 	char cont = 0;
+  int retornoThread, retornoThread2;
 
 
 
@@ -297,12 +325,12 @@ void * server_function(){
 			fread(&bufferEnvio, SizeBuffer, 1, arquivo_entrada);
 			bufferEnvio[SizeBuffer] = '0';
 			bufferEnvio[SizeBuffer+1] = doChecksum(bufferEnvio, SizeBuffer);
-			bufferEnvio[SizeBuffer+2] = cont++;
-
-      cont %= 128;
+			bufferEnvio[SizeBuffer+2] = cont;
 
 
 			bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+
+
 
 			if(bytesEnviados<0) {
 		    printf("ERROR: 01\n");
@@ -310,9 +338,38 @@ void * server_function(){
 		    close(sock);
 		    exit(1);
 		  }
-      int addr_len = sizeof(serv_addr);
-      resposta = recvfrom(sock, &bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, &addr_len);
-      if(bufferResposta[0] == 0){
+
+      timer = 1;
+      recebeu = 0;
+      limiteTempo = 0;
+      retornoThread = pthread_create( &threadTimer, NULL, timerFun, NULL);
+
+      retornoThread2 = pthread_create( &threadResposta, NULL, respostaFunc, NULL);
+
+      //printf("retorno da thread: %d\n", retornoThread);
+      while(timer){
+          //espera....
+
+      }
+
+      pthread_cancel(threadResposta);
+      pthread_cancel(threadTimer);
+
+
+      // int addr_len = sizeof(serv_addr);
+      // resposta = recvfrom(sock, &bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, &addr_len);
+
+
+      if(bufferResposta[0] == 1 && recebeu == 1){
+        printf("ACK RECEBIDO COM NUMERO DE SEQUENCIA: %d\n", bufferResposta[1]);
+        cont++;
+        cont %= 128;
+      } else {
+        if(limiteTempo){
+          printf("\nEstorou o temporizador\n");
+        } else {
+          printf("NAK recebido com numero de sequencia: %d\n",bufferResposta[1] );
+        }
         bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
       }
 
@@ -329,11 +386,11 @@ void * server_function(){
 			fread(&bufferEnvio, SizeBuffer, 1, arquivo_entrada);
 			bufferEnvio[bytes_restantes] = '1';
 			bufferEnvio[bytes_restantes+1] = doChecksum(bufferEnvio, bytes_restantes);
-			bufferEnvio[bytes_restantes+2] = cont++;
+			bufferEnvio[bytes_restantes+2] = cont;
 
-      cont %= 128;
 
 			bytesEnviados = sendto(sock, bufferEnvio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+
 
 			if(bytesEnviados<0) {
 		    printf("ERROR: 01\n");
@@ -342,7 +399,34 @@ void * server_function(){
 		    exit(1);
 		  }
 
+      timer = 1;
+      recebeu = 0;
+      limiteTempo = 0;
+      retornoThread = pthread_create( &threadTimer, NULL, timerFun, NULL);
 
+      retornoThread2 = pthread_create( &threadResposta, NULL, respostaFunc, NULL);
+
+      //printf("retorno da thread: %d\n", retornoThread);
+      while(timer){
+          //espera....
+
+      }
+
+      pthread_cancel(threadResposta);
+      pthread_cancel(threadTimer);
+
+      if(bufferResposta[0] == 1 && recebeu == 1){
+        printf("ACK RECEBIDO COM NUMERO DE SEQUENCIA: %d\n", bufferResposta[1]);
+        cont++;
+        cont %= 128;
+      } else {
+        if(limiteTempo){
+          printf("\nEstorou o temporizador\n");
+        } else {
+          printf("NAK recebido com numero de sequencia: %d\n",bufferResposta[1] );
+        }
+        bytesEnviados = sendto(sock, bufferEnvio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+      }
 
 			numero_pacotes_enviados++;
 			quantidade_bytes_enviados += bytesEnviados;
