@@ -76,6 +76,7 @@ void *timerFun(){
 int pthread_cancel(pthread_t thread);
 
 
+
 // função que espera epla resposta do servidor, será executada em paralelo
 void *respostaFunc(){
   ssize_t resposta;
@@ -126,12 +127,12 @@ void * client_function(){
   	int client_socket;
   	struct sockaddr_in serv_addr;
   	char str[4096];
-    char bufferEntrada[SizeBuffer + 3], bufferResposta[2];
+    char bufferEntrada[SizeBuffer + 3], bufferResposta[2], bufferRastreador[4];
     int bytesRecebidos;
     char numeroPacote = 0;
 
 
-  	if(n_arg < 3){
+  	if(n_arg < 2){
   		printf("Uso correto: endereco IP - porta\n");
   		exit(1);
   	}
@@ -161,8 +162,44 @@ void * client_function(){
 
   		printf("Requisitar arquivo\n");
       scanf("%s", nome_arquivo);
-
+      //sento nome arquivo rastreador
+      resposta = sendto(client_socket, nome_arquivo, sizeof(nome_arquivo), 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
+      //recfrom porta do rastreador
       int addr_len = sizeof(serv_addr);
+      bytesRecebidos = recvfrom(client_socket, &bufferRastreador, 4, 0,(struct sockaddr *) &serv_addr, &addr_len);
+      //fecha socket
+      close(client_socket);
+
+      if(!strcmp(bufferRastreador,"0000")){
+        printf("Arquivo inexistente\n");
+        return 0;
+      }
+
+      //abre socket com o outro cliente
+      client_socket = socket(AF_INET, SOCK_STREAM, 0);
+
+    	if(client_socket <= 0){
+    		printf("Erro no socket: %s\n", strerror(errno));
+    		exit(1);
+    	}
+
+    	bzero(&serv_addr, sizeof(serv_addr));
+
+    	serv_addr.sin_family = AF_INET;
+    	serv_addr.sin_port = htons(atoi(bufferRastreador));
+
+
+
+    	connector = connect(client_socket, (const struct sockaddr*) &serv_addr, sizeof(serv_addr));
+    	if(connector < 0){
+    		fprintf(stderr, ". Falha na conecao\n");
+    		exit(1);
+    	}else{
+    		printf("Conectado com: \n");
+    	}
+
+
+       addr_len = sizeof(serv_addr);
 
 			escrever_bytes = write(client_socket, nome_arquivo, sizeof(nome_arquivo));
 			if(escrever_bytes == 0){
@@ -225,7 +262,7 @@ void * client_function(){
 
   	close(client_socket);
   }
-
+  printf("Chegou no final clente\n");
   return 0;
 }
 //==============================================================================
@@ -246,7 +283,7 @@ void * server_function(){
 
 
 
-	if(n_arg < 3){
+	if(n_arg < 2){
 		printf("Uso correto: endereco IP - porta\n");
 		exit(1);
 	}
@@ -437,7 +474,7 @@ void * server_function(){
 	}
 
 
-
+  printf("Chegou no final servidor\n");
 	close(sock);
 	close(server_socket);
   return 0;
@@ -447,8 +484,8 @@ int main(int argc, char const *argv[]) {
   pthread_t server, client;
 
   n_arg = argc;
-  porta_cliente = atoi(argv[2]);
-  porta_servidor = atoi(argv[3]);
+  porta_cliente = 3030;
+  porta_servidor = atoi(argv[2]);
   //ip = argv[1];
 
   pthread_create(&server, NULL, server_function,NULL);
@@ -456,6 +493,9 @@ int main(int argc, char const *argv[]) {
 
   pthread_join(client, NULL);
   pthread_join(server, NULL);
+
+
+
 
   return 0;
 }
