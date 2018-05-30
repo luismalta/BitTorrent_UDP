@@ -13,19 +13,18 @@
 #define SizeBuffer 1024
 #define TEMPORIZADOR 1
 
-int conta = 0;
-int n_arg;
-int porta_cliente, porta_servidor, op =0;
+int opcao = 0;
+int n_arg, sock, tempo_limite, timer, recebeu, porta_servidor_rastreador, porta_servidor;
 FILE *arquivo_entrada;
-char nome_arquivo[200];
-char bufferResposta[2];
-pthread_t threadTimer, threadResposta;
-int sock;
+char nome_arquivo[200], buffer_resposta[2];
+pthread_t thread_temporizador, thread_reconhecimento;
 struct sockaddr_in serv_addr, cli_addr;
-int limiteTempo, timer, recebeu;
 
 
-int checkcheck(char buffer[], int tamanho){
+//==============================================================================
+//FUNÇÃO PARA VALIDAR CHECKSUM
+//==============================================================================
+int valida_checksum(char buffer[], int tamanho){
 
   int i;
   char check=0;
@@ -34,7 +33,7 @@ int checkcheck(char buffer[], int tamanho){
     check += buffer[i];
     check &= 127;
   }
-  printf("Verificando Checksum...\n");
+  printf("\n====== Verificação do Checksum ======\n");
   printf("Checksum recebido: 0x%x\n",buffer[tamanho-1]);
   printf("Checksum calculado: 0x%x\n",check);
 
@@ -47,11 +46,13 @@ int checkcheck(char buffer[], int tamanho){
       printf("Pacote violado!\n");
       return 0;
   }
-
-
+  printf("\n=====================================\n");
 }
 
-char doChecksum(char data[], int tamanho){
+//==============================================================================
+//FUNÇÃO PARA GERAR CHECKSUM
+//==============================================================================
+char checksum(char data[], int tamanho){
 
   int i;
   char checksum = 0;
@@ -64,24 +65,29 @@ char doChecksum(char data[], int tamanho){
 }
 
 
-//função do temporizador, será executada em paralelo
-void *timerFun(){
+//==============================================================================
+//FUNÇÃO DE ESPERA DO TEMPORIZADOR
+//==============================================================================
+void *funcao_temporizador(){
     sleep(TEMPORIZADOR);
-    limiteTempo = 1;
+    tempo_limite = 1;
     recebeu = 0;
     timer = 0;
 }
 
-// função para cnacelar um thread
+//==============================================================================
+//FUNÇÃO PARA CANCELAR THREAD
+//==============================================================================
 int pthread_cancel(pthread_t thread);
 
 
-
-// função que espera epla resposta do servidor, será executada em paralelo
-void *respostaFunc(){
+//==============================================================================
+//FUNÇÃO PARA ESPERA DE TAG DE RECONHECIMENTO
+//==============================================================================
+void *funcao_reconhecimento(){
   ssize_t resposta;
   int addr_len = sizeof(serv_addr);
-  resposta = recvfrom(sock, &bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, &addr_len);
+  resposta = recvfrom(sock, &buffer_resposta, 2, 0,(struct sockaddr *) &serv_addr, &addr_len);
   recebeu = 1;
   timer = 0;
 }
@@ -91,13 +97,10 @@ void *respostaFunc(){
 //==============================================================================
 void ler_arquivo(char nome_arquivo[]){
 
-
 	arquivo_entrada = fopen(nome_arquivo, "rb");
 	if(!arquivo_entrada){
-		printf("O arquivo não existe\n");
+		printf("ERROR: O arquivo não existe\n");
 	}
-
-
 }
 
 //==============================================================================
@@ -109,7 +112,7 @@ void escrever_arquivo(char nome_arquivo[]){
 
 	arquivo_entrada = fopen(nome_arquivo, "wb");
 	if(!arquivo_entrada){
-		printf("O arquivo não existe\n");
+		printf("ERROR: O arquivo não existe\n");
 	}
 
 }
@@ -118,20 +121,17 @@ void escrever_arquivo(char nome_arquivo[]){
 //Função de Cliente
 //==============================================================================
 void * client_function(){
-  printf("Iniciar cliente:\n");
-  scanf("%d", &op);
-  if(op == 1){
-    int connector;
-  	ssize_t ler_bytes, escrever_bytes;
-    ssize_t resposta;
-  	int client_socket;
+
+  //Inicia a função de cliente
+  scanf("%d", &opcao);
+  if(opcao == 1){
+    int connector, client_socket, bytes_recebidos;
+  	ssize_t ler_bytes, escrever_bytes, resposta;
   	struct sockaddr_in serv_addr;
-  	char str[4096];
-    char bufferEntrada[SizeBuffer + 3], bufferResposta[2], bufferRastreador[4];
-    int bytesRecebidos;
-    char numeroPacote = 0;
+    char buffer_entrada[SizeBuffer + 3], buffer_resposta[2], buffer_rastreador[4];
+    char numero_pacote = 0;
 
-
+    //Conexao com o servidor rastreador
   	if(n_arg < 2){
   		printf("Uso correto: endereco IP - porta\n");
   		exit(1);
@@ -147,35 +147,33 @@ void * client_function(){
   	bzero(&serv_addr, sizeof(serv_addr));
 
   	serv_addr.sin_family = AF_INET;
-  	serv_addr.sin_port = htons(porta_cliente);
-
-
+  	serv_addr.sin_port = htons(porta_servidor_rastreador);
 
   	connector = connect(client_socket, (const struct sockaddr*) &serv_addr, sizeof(serv_addr));
   	if(connector < 0){
-  		fprintf(stderr, ". Falha na conecao\n");
+  		fprintf(stderr, "ERROR: Não foi possivel conectar ao servidor rastreador\n");
   		exit(1);
   	}else{
-  		printf("Conectado com: \n");
+  		printf("Conectado com o servidor rastreador \n");
   	}
 
-
-  		printf("Requisitar arquivo\n");
+      //Requisita arquivo ao servidor rastreador
+  		printf("Insira o nome do arquivo a ser requisitado:\n");
       scanf("%s", nome_arquivo);
-      //sento nome arquivo rastreador
+
       resposta = sendto(client_socket, nome_arquivo, sizeof(nome_arquivo), 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
-      //recfrom porta do rastreador
+
       int addr_len = sizeof(serv_addr);
-      bytesRecebidos = recvfrom(client_socket, &bufferRastreador, 4, 0,(struct sockaddr *) &serv_addr, &addr_len);
-      //fecha socket
+      bytes_recebidos = recvfrom(client_socket, &buffer_rastreador, 4, 0,(struct sockaddr *) &serv_addr, &addr_len);
       close(client_socket);
 
-      if(!strcmp(bufferRastreador,"0000")){
-        printf("Arquivo inexistente\n");
+      //Verifica a resposta do servidor rastreador
+      if(!strcmp(buffer_rastreador,"0000")){
+        printf("ERROR: Arquivo não encontrado\n");
         return 0;
       }
 
-      //abre socket com o outro cliente
+      //Conexao com outro cliente torrent
       client_socket = socket(AF_INET, SOCK_STREAM, 0);
 
     	if(client_socket <= 0){
@@ -186,20 +184,18 @@ void * client_function(){
     	bzero(&serv_addr, sizeof(serv_addr));
 
     	serv_addr.sin_family = AF_INET;
-    	serv_addr.sin_port = htons(atoi(bufferRastreador));
-
-
+    	serv_addr.sin_port = htons(atoi(buffer_rastreador));
 
     	connector = connect(client_socket, (const struct sockaddr*) &serv_addr, sizeof(serv_addr));
     	if(connector < 0){
-    		fprintf(stderr, ". Falha na conecao\n");
+    		fprintf(stderr, "ERROR: Não foi possivel conectar ao outro cliente\n");
     		exit(1);
     	}else{
-    		printf("Conectado com: \n");
+    		printf("Conectado com: %d\n", atoi(buffer_rastreador));
     	}
 
 
-       addr_len = sizeof(serv_addr);
+      addr_len = sizeof(serv_addr);
 
 			escrever_bytes = write(client_socket, nome_arquivo, sizeof(nome_arquivo));
 			if(escrever_bytes == 0){
@@ -208,81 +204,66 @@ void * client_function(){
 			}
 
 			escrever_arquivo(nome_arquivo);
-			while(1){
-				printf("Entrou no while cliente\n");
-				bytesRecebidos = recvfrom(client_socket, &bufferEntrada, SizeBuffer+3, 0,(struct sockaddr *) &serv_addr, &addr_len);
-				fwrite(&bufferEntrada,sizeof(char),bytesRecebidos-3,arquivo_entrada);
 
-        printf("numeroPacote: %d   Buffer: %d\n", numeroPacote, bufferEntrada[bytesRecebidos]);
-        if(numeroPacote > bufferEntrada[bytesRecebidos-1]){
+      //While para transferencia dos pacotes
+			while(1){
+
+        //Recebe pacote no buffer_entrada
+				bytes_recebidos = recvfrom(client_socket, &buffer_entrada, SizeBuffer+3, 0,(struct sockaddr *) &serv_addr, &addr_len);
+				fwrite(&buffer_entrada,sizeof(char),bytes_recebidos-3,arquivo_entrada);
+
+        //Verifica o numero de sequencia
+        if(numero_pacote > buffer_entrada[bytes_recebidos-1]){
           printf("PACOTE DUPLICADO, foi descartado\n");
           printf("ACK ENVIADO!!!\n");
-          bufferResposta[0] = 1;
-          bufferResposta[1] = numeroPacote;
-          resposta = sendto(client_socket, bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
+          buffer_resposta[0] = 1;
+          buffer_resposta[1] = numero_pacote;
+          resposta = sendto(client_socket, buffer_resposta, 2, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
           continue;
         }
 
+          //Valida checksum do pacote
+          if(!valida_checksum(buffer_entrada,bytes_recebidos-1)){
+            printf("NAK N = %d ENVIADO!!!\n",numero_pacote);
 
-          if(!checkcheck(bufferEntrada,bytesRecebidos-1)){
-            printf("NAK N = %d ENVIADO!!!\n",numeroPacote);
-
-            bufferResposta[0] = 2;
-            bufferResposta[1] = numeroPacote;
-            resposta = sendto(client_socket, bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
+            buffer_resposta[0] = 2;
+            buffer_resposta[1] = numero_pacote;
+            resposta = sendto(client_socket, buffer_resposta, 2, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
   					continue;
   				} else {
-            printf("ACK N = %d ENVIADO!!!\n",numeroPacote);
-            bufferResposta[0] = 1;
-            bufferResposta[1] = numeroPacote;
-            resposta = sendto(client_socket, bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
+            printf("ACK N = %d ENVIADO!!!\n",numero_pacote);
+            buffer_resposta[0] = 1;
+            buffer_resposta[1] = numero_pacote;
+            resposta = sendto(client_socket, buffer_resposta, 2, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
           }
 
 
-        numeroPacote++;
-        numeroPacote %= 128;
-				// if(bytesRecebidos < SizeBuffer){
-				// 	fclose(arquivo_entrada);
-				// 	printf("Saiu do if buffer menor\n");
-				// 	break;
-				// }
+        numero_pacote++;
+        numero_pacote %= 128;
 
-				if(bufferEntrada[bytesRecebidos-3] == '1'){
-          printf("%x\n", bufferEntrada[bytesRecebidos-1]);
+        //Fecha o arquivo no caso de ser o ultimo pacote
+				if(buffer_entrada[bytes_recebidos-3] == '1'){
 					fclose(arquivo_entrada);
-					printf("Saiu do if buffer igual a 1\n");
 					break;
 				}
-
-
 			}
-
-
-
-
   	close(client_socket);
   }
-  printf("Chegou no final clente\n");
+
   return 0;
 }
 //==============================================================================
 //Função de Servidor
 //==============================================================================
 void * server_function(){
-  int server_socket, binder, listener, porta;
-	ssize_t ler_bytes, escrever_bytes;
-	socklen_t clilen;
-  ssize_t resposta;
-	char str[4096];
-  int bytesEnviados,bytes_restantes, rc;
+  int server_socket, binder, listener, porta, bytes_enviados,bytes_restantes, rc;
 	int transferencia_completa = 0, quantidade_bytes_enviados = 0, numero_pacotes_enviados = 0;
-	char bufferEnvio[SizeBuffer+3];
-	char cont = 0;
-  int retornoThread, retornoThread2;
+  ssize_t ler_bytes, escrever_bytes, resposta;
+  socklen_t clilen;
+	char buffer_envio[SizeBuffer+3];
+	char contador_pacote = 0;
 
-
-
-
+  //Conexao com o cliente
 	if(n_arg < 2){
 		printf("Uso correto: endereco IP - porta\n");
 		exit(1);
@@ -301,13 +282,14 @@ void * server_function(){
 	}
 	else if(server_socket){
 		do{
-			printf("Aguardando cliente...\n");
+			printf("=== Cliente torrent em espera ===\n");
+      printf("Digite '1' para buscar um arquivo.\n");
 		}while(!accept);
 	}
 
 	bzero(&serv_addr, sizeof(serv_addr));
 
-	//porta = atoi(argv[2]);
+
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	serv_addr.sin_port = htons(porta_servidor);
@@ -343,158 +325,149 @@ void * server_function(){
 	}
 
   ler_arquivo(nome_arquivo);
-  printf("Saiu ler arquivo\n");
 
+  //Verifica o tamnho do arquivo
   fseek(arquivo_entrada,0,SEEK_END);
   long long tamanho_arquivo = ftell(arquivo_entrada);
   printf("%lld\n", tamanho_arquivo);
   fseek(arquivo_entrada,0,SEEK_SET);
 
-  printf("Pegou tamnho\n");
-
+  //While para transferencia dos pacotes
 	while(1){
-		printf("Entrou no while servidor\n");
+
 		if(transferencia_completa) break;
 
+    //If para pacotes de tamnho padrão
 		if(quantidade_bytes_enviados + SizeBuffer < tamanho_arquivo){
-			printf("Entrou if pacote tamanho normal\n");
 
-			fread(&bufferEnvio, SizeBuffer, 1, arquivo_entrada);
-			bufferEnvio[SizeBuffer] = '0';
-			bufferEnvio[SizeBuffer+1] = doChecksum(bufferEnvio, SizeBuffer);
-			bufferEnvio[SizeBuffer+2] = cont;
+      //Cria e envia um pacote com dados, flag de pacote final, checksum e numero de sequencia
+			fread(&buffer_envio, SizeBuffer, 1, arquivo_entrada);
+			buffer_envio[SizeBuffer] = '0';
+			buffer_envio[SizeBuffer+1] = checksum(buffer_envio, SizeBuffer);
+			buffer_envio[SizeBuffer+2] = contador_pacote;
 
+			bytes_enviados = sendto(sock, buffer_envio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
 
-			bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
-
-
-
-			if(bytesEnviados<0) {
-		    printf("ERROR: 01\n");
-		    printf("Cannot send data\n");
-		    close(sock);
+			if(bytes_enviados<0) {
+		    printf("ERROR: Não foi possivel enviar os dados\n");
+		    close(server_socket);
 		    exit(1);
 		  }
 
+      //Inicio do temporizador
       timer = 1;
       recebeu = 0;
-      limiteTempo = 0;
-      retornoThread = pthread_create( &threadTimer, NULL, timerFun, NULL);
+      tempo_limite = 0;
+      pthread_create( &thread_temporizador, NULL, funcao_temporizador, NULL);
+      pthread_create( &thread_reconhecimento, NULL, funcao_reconhecimento, NULL);
 
-      retornoThread2 = pthread_create( &threadResposta, NULL, respostaFunc, NULL);
 
-      //printf("retorno da thread: %d\n", retornoThread);
       while(timer){
-          //espera....
-
+          //Espera pelo estouro do temporizador ou pacote de reconhecimento
       }
 
-      pthread_cancel(threadResposta);
-      pthread_cancel(threadTimer);
+      pthread_cancel(thread_reconhecimento);
+      pthread_cancel(thread_temporizador);
 
-
-      // int addr_len = sizeof(serv_addr);
-      // resposta = recvfrom(sock, &bufferResposta, 2, 0,(struct sockaddr *) &serv_addr, &addr_len);
-
-
-      if(bufferResposta[0] == 1 && recebeu == 1){
-        printf("ACK RECEBIDO COM NUMERO DE SEQUENCIA: %d\n", bufferResposta[1]);
-        cont++;
-        cont %= 128;
+      //Verifica o reconhecimento do pacote
+      if(buffer_resposta[0] == 1 && recebeu == 1){
+        printf("ACK RECEBIDO COM NUMERO DE SEQUENCIA: %d\n", buffer_resposta[1]);
+        contador_pacote++;
+        contador_pacote %= 128;
       } else {
-        if(limiteTempo){
+        if(tempo_limite){
           printf("\nEstorou o temporizador\n");
         } else {
-          printf("NAK recebido com numero de sequencia: %d\n",bufferResposta[1] );
+          printf("NAK recebido com numero de sequencia: %d\n",buffer_resposta[1] );
         }
-        bytesEnviados = sendto(sock, bufferEnvio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+        bytes_enviados = sendto(sock, buffer_envio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
       }
 
 			numero_pacotes_enviados++;
-			quantidade_bytes_enviados += bytesEnviados;
+			quantidade_bytes_enviados += bytes_enviados;
 
-			memset(bufferEnvio,0x0, SizeBuffer);
+			memset(buffer_envio,0x0, SizeBuffer);
 
-		} else {
-			printf("Entrou else pacote menor\n");
+		}
+    //Else para paotes com tamnho menor que o padrão
+    else {
+
 			bytes_restantes = tamanho_arquivo - quantidade_bytes_enviados;
-			memset(bufferEnvio,0x0,SizeBuffer);
+			memset(buffer_envio,0x0,SizeBuffer);
 
-			fread(&bufferEnvio, SizeBuffer, 1, arquivo_entrada);
-			bufferEnvio[bytes_restantes] = '1';
-			bufferEnvio[bytes_restantes+1] = doChecksum(bufferEnvio, bytes_restantes);
-			bufferEnvio[bytes_restantes+2] = cont;
+      //Cria e envia um pacote com dados, flag de pacote final, checksum e numero de sequencia
+			fread(&buffer_envio, SizeBuffer, 1, arquivo_entrada);
+			buffer_envio[bytes_restantes] = '1';
+			buffer_envio[bytes_restantes+1] = checksum(buffer_envio, bytes_restantes);
+			buffer_envio[bytes_restantes+2] = contador_pacote;
 
+			bytes_enviados = sendto(sock, buffer_envio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
 
-			bytesEnviados = sendto(sock, bufferEnvio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
-
-
-			if(bytesEnviados<0) {
-		    printf("ERROR: 01\n");
-		    printf("Cannot send data\n");
-		    close(sock);
+			if(bytes_enviados<0) {
+		    printf("ERROR: Não foi possivel enviar os dados\n");
+		    close(server_socket);
 		    exit(1);
 		  }
 
+      //Inicio do temporizador
       timer = 1;
       recebeu = 0;
-      limiteTempo = 0;
-      retornoThread = pthread_create( &threadTimer, NULL, timerFun, NULL);
+      tempo_limite = 0;
 
-      retornoThread2 = pthread_create( &threadResposta, NULL, respostaFunc, NULL);
+      pthread_create( &thread_temporizador, NULL, funcao_temporizador, NULL);
+      pthread_create( &thread_reconhecimento, NULL, funcao_reconhecimento, NULL);
 
-      //printf("retorno da thread: %d\n", retornoThread);
+
       while(timer){
-          //espera....
-
+          //Espera pelo estouro do temporizador ou pacote de reconhecimento
       }
 
-      pthread_cancel(threadResposta);
-      pthread_cancel(threadTimer);
+      pthread_cancel(thread_reconhecimento);
+      pthread_cancel(thread_temporizador);
 
-      if(bufferResposta[0] == 1 && recebeu == 1){
-        printf("ACK RECEBIDO COM NUMERO DE SEQUENCIA: %d\n", bufferResposta[1]);
-        cont++;
-        cont %= 128;
+      //Verifica o reconhecimento do pacote
+      if(buffer_resposta[0] == 1 && recebeu == 1){
+        printf("ACK RECEBIDO COM NUMERO DE SEQUENCIA: %d\n", buffer_resposta[1]);
+        contador_pacote++;
+        contador_pacote %= 128;
       } else {
-        if(limiteTempo){
+        if(tempo_limite){
           printf("\nEstorou o temporizador\n");
         } else {
-          printf("NAK recebido com numero de sequencia: %d\n",bufferResposta[1] );
+          printf("NAK recebido com numero de sequencia: %d\n",buffer_resposta[1] );
         }
-        bytesEnviados = sendto(sock, bufferEnvio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+        bytes_enviados = sendto(sock, buffer_envio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
       }
 
 			numero_pacotes_enviados++;
-			quantidade_bytes_enviados += bytesEnviados;
+			quantidade_bytes_enviados += bytes_enviados;
 
-			memset(bufferEnvio,0x0, SizeBuffer);
+			memset(buffer_envio,0x0, SizeBuffer);
 			transferencia_completa = 1;
 		}
 	}
 
-
-  printf("Chegou no final servidor\n");
 	close(sock);
 	close(server_socket);
   return 0;
 }
 //==============================================================================
+//FUNÇÃO PRINCIPAL
+//==============================================================================
 int main(int argc, char const *argv[]) {
   pthread_t server, client;
 
+  //Definição das portas para conexao
   n_arg = argc;
-  porta_cliente = 3030;
+  porta_servidor_rastreador = 3030;
   porta_servidor = atoi(argv[2]);
-  //ip = argv[1];
 
+  //Inicia as thread de servidor e cliente torrent
   pthread_create(&server, NULL, server_function,NULL);
   pthread_create(&client, NULL, client_function,NULL);
 
   pthread_join(client, NULL);
   pthread_join(server, NULL);
-
-
 
 
   return 0;

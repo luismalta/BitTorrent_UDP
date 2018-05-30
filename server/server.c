@@ -9,23 +9,6 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-//==============================================================================
-FILE *arquivo_entrada;
-
-
-//==============================================================================
-//Abertura do arquivo
-void abrir_arquivo(){
-	char *nome_arquivo;
-
-	nome_arquivo = (char*) calloc(50, sizeof(char));
-	printf("Nome do arquivo:\n");
-	scanf("%s", nome_arquivo);
-	arquivo_entrada = fopen(nome_arquivo, "rb");
-	if(!arquivo_entrada){
-		printf("O arquivo não existe\n");
-	}
-}
 
 //==============================================================================
 int main(int argc, char const *argv[]){
@@ -33,16 +16,13 @@ int main(int argc, char const *argv[]){
 	struct sockaddr_in serv_addr, cli_addr;
 	ssize_t ler_bytes, escrever_bytes;
 	socklen_t clilen;
+	ssize_t resposta;
+	int bytesRecebidos;
 	char str[4096];
+	char musica[100] = "sick_boy.mp3";
+	char bufferRastreador[100];
 
-	abrir_arquivo();
-
-
-	if(argc < 3){
-		printf("Uso correto: endereco IP - porta\n");
-		exit(1);
-	}
-
+while(1){
 	server_socket = socket(AF_INET, SOCK_STREAM, 0);
 
 	if(server_socket == 0){
@@ -62,10 +42,9 @@ int main(int argc, char const *argv[]){
 
 	bzero(&serv_addr, sizeof(serv_addr));
 
-	porta = atoi(argv[2]);
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	serv_addr.sin_port = htons(porta);
+	serv_addr.sin_port = htons(3030);
 
 	binder = bind(server_socket, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
 	if(binder < 0){
@@ -90,29 +69,28 @@ int main(int argc, char const *argv[]){
 		printf("Conexao recebida de %s\n", inet_ntoa(cli_addr.sin_addr));
 	}
 
-while(1){
 
-	ler_bytes = read(sock, str, sizeof(str));
-	if(ler_bytes <= 0){
-		printf("Erro no read: %s\n", strerror(errno));
 
+	// ler_bytes = read(sock, str, sizeof(str));
+	// if(ler_bytes <= 0){
+	// 	printf("Erro no read: %s\n", strerror(errno));
+	//
+	// }
+	int addr_len = sizeof(serv_addr);
+	bytesRecebidos = read(sock, bufferRastreador, sizeof(bufferRastreador));
+
+	if(!strcmp(bufferRastreador,musica)){
+		printf("%s\n\n", bufferRastreador);
+		printf("%s\n", musica);
+		resposta = sendto(sock, "2021", 4, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
+
+	} else {
+		printf("Arquivo inexistente\n");
+		resposta = sendto(sock, "0000", 4, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
 	}
-
-	printf("Cliente: %s", str);
-
-	printf("Mensagem: ");
-	fgets(str, sizeof(str), stdin);
-	escrever_bytes = write(sock, str, sizeof(str));
-	if(escrever_bytes == 0){
-		printf("Erro no write: %s\n",strerror(errno));
-		printf("Nada escrito.\n");
-
-	}
-}
-
-
 	close(sock);
 	close(server_socket);
+}
 
 	return 0;
 }
