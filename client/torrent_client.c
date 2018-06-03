@@ -23,7 +23,7 @@ struct sockaddr_in remoteServAddr;
 
 
 //==============================================================================
-//FUNÇÃO PARA VALIDAR CHECKSUM
+//Função para validar checksum
 //==============================================================================
 int valida_checksum(char buffer[], int tamanho){
 
@@ -35,23 +35,23 @@ int valida_checksum(char buffer[], int tamanho){
     check &= 127;
   }
   printf("\n====== Verificação do Checksum ======\n");
-  printf("Checksum recebido: 0x%x\n",buffer[tamanho-1]);
-  printf("Checksum calculado: 0x%x\n",check);
+  printf("Checksum esperado: 0x%x\n",buffer[tamanho-1]);
+  printf("Checksum real: 0x%x\n",check);
 
   if(buffer[tamanho-1] == (check)){
-      printf("Pacote não violado!\n");
+      printf("Status do pacote: OK!\n");
       return 1;
   }
 
   else{
-      printf("Pacote violado!\n");
+      printf("Status do pacote: ERROR\n");
       return 0;
   }
   printf("\n=====================================\n");
 }
 
 //==============================================================================
-//FUNÇÃO PARA GERAR CHECKSUM
+//Função para gerar checksum
 //==============================================================================
 char checksum(char data[], int tamanho){
 
@@ -67,7 +67,7 @@ char checksum(char data[], int tamanho){
 
 
 //==============================================================================
-//FUNÇÃO DE ESPERA DO TEMPORIZADOR
+//Função de espera do temporizador
 //==============================================================================
 void *funcao_temporizador(){
     sleep(TEMPORIZADOR);
@@ -77,13 +77,13 @@ void *funcao_temporizador(){
 }
 
 //==============================================================================
-//FUNÇÃO PARA CANCELAR THREAD
+//Função para cancelar thread
 //==============================================================================
 int pthread_cancel(pthread_t thread);
 
 
 //==============================================================================
-//FUNÇÃO PARA ESPERA DE TAG DE RECONHECIMENTO
+//Função para espera de reconhecimento
 //==============================================================================
 void *funcao_reconhecimento(){
   ssize_t resposta;
@@ -126,7 +126,7 @@ void * client_function(){
   //Inicia a função de cliente
   scanf("%d", &opcao);
   if(opcao == 1){
-    int connector, client_socket, bytes_recebidos, binder;
+    int client_socket, bytes_recebidos, binder;
   	ssize_t ler_bytes, escrever_bytes, resposta;
   	struct sockaddr_in serv_addr;
     struct hostent *h;
@@ -140,14 +140,10 @@ void * client_function(){
   	}
 
     h = gethostbyname(ip_servidor);
-    printf("arg1 : %s\n", ip_servidor);
     if(h==NULL) {
-      printf("ERROR: Get host by name\n");
+      printf("ERROR: Nome do host\n");
       exit(1);
     }
-
-    //printf("%s: sending data to '%s' (IP : %s) \n", argv[0], h->h_name,
-    // inet_ntoa(*(struct in_addr *)h->h_addr_list[0]));
 
     remoteServAddr.sin_family = h->h_addrtype;
     memcpy((char *) &remoteServAddr.sin_addr.s_addr,
@@ -155,15 +151,15 @@ void * client_function(){
     remoteServAddr.sin_port = htons(3030);
 
 
-    /* socket creation */
+    //Criação do socket
     client_socket = socket(AF_INET,SOCK_DGRAM,0);
     if(client_socket<0) {
-      printf("ERROR: cannot open socket \n");
+      printf("ERROR: Socket não pode ser aberto \n");
       exit(1);
     }
 
 
-    /* bind any port */
+    // Conexão com qualquer porta
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     serv_addr.sin_port = htons(0);
@@ -171,70 +167,44 @@ void * client_function(){
 
     binder = bind(client_socket, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
     if(binder<0) {
-      printf("ERROR:cannot bind port\n");
+      printf("ERROR: Não é possivel conectar a porta\n");
       exit(1);
     }
 
-  	// client_socket = socket(AF_INET, SOCK_DGRAM, 0);
-    //
-  	// if(client_socket <= 0){
-  	// 	printf("Erro no socket: %s\n", strerror(errno));
-  	// 	exit(1);
-  	// }
-    //
-  	// bzero(&serv_addr, sizeof(serv_addr));
-    //
-  	// serv_addr.sin_family = AF_INET;
-  	// serv_addr.sin_port = htons(porta_servidor_rastreador);
 
+    //Requisita arquivo ao servidor rastreador
+  	printf("Insira o nome do arquivo a ser requisitado:\n");
+    scanf("%s", nome_arquivo);
 
-  	// connector = connect(client_socket, (const struct sockaddr*) &serv_addr, sizeof(serv_addr));
-  	// if(connector < 0){
-  	// 	fprintf(stderr, "ERROR: Não foi possivel conectar ao servidor rastreador\n");
-  	// 	exit(1);
-  	// }else{
-  	// 	printf("Conectado com o servidor rastreador \n");
-  	// }
+    resposta = sendto(client_socket, nome_arquivo, sizeof(nome_arquivo), 0,(struct sockaddr *) &remoteServAddr, sizeof(remoteServAddr));
 
-      //Requisita arquivo ao servidor rastreador
-  		printf("Insira o nome do arquivo a ser requisitado:\n");
-      scanf("%s", nome_arquivo);
+    int addr_len = sizeof(remoteServAddr);
+    bytes_recebidos = recvfrom(client_socket, &buffer_rastreador, 4, 0,(struct sockaddr *) &remoteServAddr, &addr_len);
+    close(client_socket);
 
-      resposta = sendto(client_socket, nome_arquivo, sizeof(nome_arquivo), 0,(struct sockaddr *) &remoteServAddr, sizeof(remoteServAddr));
+    //Verifica a resposta do servidor rastreador
+    if(!strcmp(buffer_rastreador,"0000")){
+      printf("ERROR: Arquivo não encontrado\n");
+      return 0;
+    }
 
-      int addr_len = sizeof(remoteServAddr);
-      bytes_recebidos = recvfrom(client_socket, &buffer_rastreador, 4, 0,(struct sockaddr *) &remoteServAddr, &addr_len);
-       printf("aqui\n");
-      close(client_socket);
-
-      //Verifica a resposta do servidor rastreador
-      if(!strcmp(buffer_rastreador,"0000")){
-        printf("ERROR: Arquivo não encontrado\n");
-        return 0;
-      }
-
-      /////////////////////////////////////////////////////////////
-      //Conexao com outro cliente torrent
-      h = gethostbyname(ip_servidor);
-      printf("arg1 : %s\n", ip_servidor);
-      if(h==NULL) {
-        printf("ERROR: Get host by name\n");
-        exit(1);
-      }
-
-      //printf("%s: sending data to '%s' (IP : %s) \n", argv[0], h->h_name,
-      // inet_ntoa(*(struct in_addr *)h->h_addr_list[0]));
+    /////////////////////////////////////////////////////////////
+    //Conexao com outro cliente torrent
+    h = gethostbyname(ip_servidor);
+    if(h==NULL) {
+      printf("ERROR: Nome do host\n");
+      exit(1);
+    }
 
       remoteServAddr.sin_family = h->h_addrtype;
       memcpy((char *) &remoteServAddr.sin_addr.s_addr,
        h->h_addr_list[0], h->h_length);
       remoteServAddr.sin_port = htons(atoi(buffer_rastreador));
-      printf("depos remote server adress\n");
 
-      /* socket creation */
+      //Criando socket
       client_socket = socket(AF_INET,SOCK_DGRAM,0);
       if(client_socket<0) {
-        printf("ERROR: cannot open socket \n");
+        printf("ERROR: Socket não pode ser aberto \n");
         exit(1);
       }
 
@@ -247,17 +217,9 @@ void * client_function(){
 
       binder = bind(client_socket, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
       if(binder<0) {
-        printf("ERROR:cannot bind port\n");
+        printf("ERROR: Não é possivel conectar com a porta\n");
         exit(1);
       }
-
-    	// connector = connect(client_socket, (const struct sockaddr*) &serv_addr, sizeof(serv_addr));
-    	// if(connector < 0){
-    	// 	fprintf(stderr, "ERROR: Não foi possivel conectar ao outro cliente\n");
-    	// 	exit(1);
-    	// }else{
-    	// 	printf("Conectado com: %d\n", atoi(buffer_rastreador));
-    	// }
 
       addr_len = sizeof(remoteServAddr);
 
@@ -279,8 +241,8 @@ void * client_function(){
 
         //Verifica o numero de sequencia
         if(numero_pacote > buffer_entrada[bytes_recebidos-1]){
-          printf("PACOTE DUPLICADO, foi descartado\n");
-          printf("ACK ENVIADO!!!\n");
+          printf("Pacote duplicado detectado\n");
+          printf("Envio de reconhecimento ACK\n");
           buffer_resposta[0] = 1;
           buffer_resposta[1] = numero_pacote;
           resposta = sendto(client_socket, buffer_resposta, 2, 0,(struct sockaddr *) &remoteServAddr, sizeof(remoteServAddr));
@@ -289,14 +251,14 @@ void * client_function(){
 
           //Valida checksum do pacote
           if(!valida_checksum(buffer_entrada,bytes_recebidos-1)){
-            printf("NAK N = %d ENVIADO!!!\n",numero_pacote);
+            printf("Numero do NACK = %d\n",numero_pacote);
 
             buffer_resposta[0] = 2;
             buffer_resposta[1] = numero_pacote;
             resposta = sendto(client_socket, buffer_resposta, 2, 0,(struct sockaddr *) &remoteServAddr, sizeof(remoteServAddr));
   					continue;
   				} else {
-            printf("ACK N = %d ENVIADO!!!\n",numero_pacote);
+            printf("Numero do ACK = %d\n",numero_pacote);
             buffer_resposta[0] = 1;
             buffer_resposta[1] = numero_pacote;
             resposta = sendto(client_socket, buffer_resposta, 2, 0,(struct sockaddr *) &remoteServAddr, sizeof(remoteServAddr));
@@ -321,11 +283,10 @@ void * client_function(){
 //Função de Servidor
 //==============================================================================
 void * server_function(){
-  int  binder, listener, porta, bytes_enviados,bytes_restantes, rc;
+  int  binder, bytes_enviados,bytes_restantes, rc;
 	int transferencia_completa = 0, quantidade_bytes_enviados = 0, numero_pacotes_enviados = 0;
   ssize_t ler_bytes, escrever_bytes, resposta;
   socklen_t clilen;
-  struct hostent *h;
 	char buffer_envio[SizeBuffer+3];
 	char contador_pacote = 0;
 
@@ -337,34 +298,14 @@ void * server_function(){
 
 	server_socket = socket(AF_INET, SOCK_DGRAM, 0);
 
-	if(server_socket == 0){
-		printf("Erro na abertura do socket: %s\n", strerror(errno));
-		exit(1);
-	}
-
-	if(server_socket < 0){
+	if(server_socket <= 0){
 		printf("Erro na abertura do socket: %s\n", strerror(errno));
 		exit(1);
 	}
 	else if(server_socket){
-		do{
-			printf("=== Cliente torrent em espera ===\n");
-      printf("Digite '1' para buscar um arquivo.\n");
-		}while(!accept);
+		printf("=== Cliente torrent em espera ===\n");
+    printf("Digite '1' para buscar um arquivo.\n");
 	}
-
-	// //bzero(&serv_addr, sizeof(serv_addr));
-  // h = gethostbyname(ip_servidor);
-  // printf("arg1 : %s\n", ip_servidor);
-  // if(h==NULL) {
-  //   printf("ERROR: Get host by name\n");
-  //   exit(1);
-  // }
-  //
-  // remoteServAddr.sin_family = h->h_addrtype;
-  // memcpy((char *) &remoteServAddr.sin_addr.s_addr,
-  //  h->h_addr_list[0], h->h_length);
-  // remoteServAddr.sin_port = htons(porta_servidor);
 
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -376,31 +317,11 @@ void * server_function(){
 		exit(1);
 	}
 
-	// listener = listen(server_socket, 20);
-  //
-	// if(listener < 0){
-	// 	printf("Erro no Listen: %s\n", strerror(errno));
-	// 	exit(1);
-	// }
 
 	clilen = sizeof(cli_addr);
-  //
-	// sock = accept(server_socket, (struct sockaddr*) &cli_addr, &clilen);
-  //
-	// if(sock <= 0){
-	// 	printf("Erro no accept: %s\n", strerror(errno));
-	// }else{
-	// 	printf("Conexao recebida de %s\n", inet_ntoa(cli_addr.sin_addr));
-	// }
 
 
-
-	// ler_bytes = read(sock, nome_arquivo, sizeof(nome_arquivo));
-	// if(ler_bytes <= 0){
-	// 	printf("Erro no read: %s\n", strerror(errno));
-	// }
-
-  	ler_bytes = recvfrom(server_socket, &nome_arquivo, sizeof(nome_arquivo), 0,(struct sockaddr*) &cli_addr, &clilen);
+  ler_bytes = recvfrom(server_socket, &nome_arquivo, sizeof(nome_arquivo), 0,(struct sockaddr*) &cli_addr, &clilen);
 
   ler_arquivo(nome_arquivo);
 
@@ -446,18 +367,17 @@ void * server_function(){
 
       pthread_cancel(thread_reconhecimento);
       pthread_cancel(thread_temporizador);
-      printf("buffer resposta: %d\n",buffer_resposta[0]);
-      printf("recebeu %d\n", recebeu);
+
       //Verifica o reconhecimento do pacote
       if(buffer_resposta[0] == 1 && recebeu == 1){
-        printf("ACK RECEBIDO COM NUMERO DE SEQUENCIA: %d\n", buffer_resposta[1]);
+        printf("Numero de sequencia do ACK: %d\n", buffer_resposta[1]);
         contador_pacote++;
         contador_pacote %= 128;
       } else {
         if(tempo_limite){
-          printf("\nEstorou o temporizador\n");
+          printf("\nTempo de espera excedido\n");
         } else {
-          printf("NAK recebido com numero de sequencia: %d\n",buffer_resposta[1] );
+          printf("Numero de sequencia do NACK: %d\n",buffer_resposta[1] );
         }
         bytes_enviados = sendto(server_socket, buffer_envio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
       }
@@ -506,14 +426,14 @@ void * server_function(){
 
       //Verifica o reconhecimento do pacote
       if(buffer_resposta[0] == 1 && recebeu == 1){
-        printf("ACK RECEBIDO COM NUMERO DE SEQUENCIA: %d\n", buffer_resposta[1]);
+        printf("Numero de sequencia do ACK:: %d\n", buffer_resposta[1]);
         contador_pacote++;
         contador_pacote %= 128;
       } else {
         if(tempo_limite){
-          printf("\nEstorou o temporizador\n");
+          printf("\nTempo de espera excedido\n");
         } else {
-          printf("NAK recebido com numero de sequencia: %d\n",buffer_resposta[1] );
+          printf("Numero de sequencia do NACK: %d\n",buffer_resposta[1] );
         }
         bytes_enviados = sendto(server_socket, buffer_envio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
       }
