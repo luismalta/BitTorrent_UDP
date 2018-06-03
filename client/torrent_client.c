@@ -14,11 +14,12 @@
 #define TEMPORIZADOR 1
 
 int opcao = 0;
-int n_arg, sock, tempo_limite, timer, recebeu, porta_servidor_rastreador, porta_servidor;
+int n_arg, sock, tempo_limite, timer, recebeu, porta_servidor_rastreador, porta_servidor, server_socket;
 FILE *arquivo_entrada;
-char nome_arquivo[200], buffer_resposta[2];
+char nome_arquivo[200], buffer_resposta[2], ip_servidor[15];
 pthread_t thread_temporizador, thread_reconhecimento;
 struct sockaddr_in serv_addr, cli_addr;
+struct sockaddr_in remoteServAddr;
 
 
 //==============================================================================
@@ -86,8 +87,8 @@ int pthread_cancel(pthread_t thread);
 //==============================================================================
 void *funcao_reconhecimento(){
   ssize_t resposta;
-  int addr_len = sizeof(serv_addr);
-  resposta = recvfrom(sock, &buffer_resposta, 2, 0,(struct sockaddr *) &serv_addr, &addr_len);
+  int addr_len = sizeof(remoteServAddr);
+  resposta = recvfrom(server_socket, &buffer_resposta, 2, 0,(struct sockaddr *) &remoteServAddr, &addr_len);
   recebeu = 1;
   timer = 0;
 }
@@ -125,9 +126,10 @@ void * client_function(){
   //Inicia a função de cliente
   scanf("%d", &opcao);
   if(opcao == 1){
-    int connector, client_socket, bytes_recebidos;
+    int connector, client_socket, bytes_recebidos, binder;
   	ssize_t ler_bytes, escrever_bytes, resposta;
   	struct sockaddr_in serv_addr;
+    struct hostent *h;
     char buffer_entrada[SizeBuffer + 3], buffer_resposta[2], buffer_rastreador[4];
     char numero_pacote = 0;
 
@@ -137,34 +139,72 @@ void * client_function(){
   		exit(1);
   	}
 
-  	client_socket = socket(AF_INET, SOCK_STREAM, 0);
+    h = gethostbyname(ip_servidor);
+    printf("arg1 : %s\n", ip_servidor);
+    if(h==NULL) {
+      printf("ERROR: Get host by name\n");
+      exit(1);
+    }
 
-  	if(client_socket <= 0){
-  		printf("Erro no socket: %s\n", strerror(errno));
-  		exit(1);
-  	}
+    //printf("%s: sending data to '%s' (IP : %s) \n", argv[0], h->h_name,
+    // inet_ntoa(*(struct in_addr *)h->h_addr_list[0]));
 
-  	bzero(&serv_addr, sizeof(serv_addr));
+    remoteServAddr.sin_family = h->h_addrtype;
+    memcpy((char *) &remoteServAddr.sin_addr.s_addr,
+     h->h_addr_list[0], h->h_length);
+    remoteServAddr.sin_port = htons(3030);
 
-  	serv_addr.sin_family = AF_INET;
-  	serv_addr.sin_port = htons(porta_servidor_rastreador);
 
-  	connector = connect(client_socket, (const struct sockaddr*) &serv_addr, sizeof(serv_addr));
-  	if(connector < 0){
-  		fprintf(stderr, "ERROR: Não foi possivel conectar ao servidor rastreador\n");
-  		exit(1);
-  	}else{
-  		printf("Conectado com o servidor rastreador \n");
-  	}
+    /* socket creation */
+    client_socket = socket(AF_INET,SOCK_DGRAM,0);
+    if(client_socket<0) {
+      printf("ERROR: cannot open socket \n");
+      exit(1);
+    }
+
+
+    /* bind any port */
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serv_addr.sin_port = htons(0);
+
+
+    binder = bind(client_socket, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+    if(binder<0) {
+      printf("ERROR:cannot bind port\n");
+      exit(1);
+    }
+
+  	// client_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    //
+  	// if(client_socket <= 0){
+  	// 	printf("Erro no socket: %s\n", strerror(errno));
+  	// 	exit(1);
+  	// }
+    //
+  	// bzero(&serv_addr, sizeof(serv_addr));
+    //
+  	// serv_addr.sin_family = AF_INET;
+  	// serv_addr.sin_port = htons(porta_servidor_rastreador);
+
+
+  	// connector = connect(client_socket, (const struct sockaddr*) &serv_addr, sizeof(serv_addr));
+  	// if(connector < 0){
+  	// 	fprintf(stderr, "ERROR: Não foi possivel conectar ao servidor rastreador\n");
+  	// 	exit(1);
+  	// }else{
+  	// 	printf("Conectado com o servidor rastreador \n");
+  	// }
 
       //Requisita arquivo ao servidor rastreador
   		printf("Insira o nome do arquivo a ser requisitado:\n");
       scanf("%s", nome_arquivo);
 
-      resposta = sendto(client_socket, nome_arquivo, sizeof(nome_arquivo), 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
+      resposta = sendto(client_socket, nome_arquivo, sizeof(nome_arquivo), 0,(struct sockaddr *) &remoteServAddr, sizeof(remoteServAddr));
 
-      int addr_len = sizeof(serv_addr);
-      bytes_recebidos = recvfrom(client_socket, &buffer_rastreador, 4, 0,(struct sockaddr *) &serv_addr, &addr_len);
+      int addr_len = sizeof(remoteServAddr);
+      bytes_recebidos = recvfrom(client_socket, &buffer_rastreador, 4, 0,(struct sockaddr *) &remoteServAddr, &addr_len);
+       printf("aqui\n");
       close(client_socket);
 
       //Verifica a resposta do servidor rastreador
@@ -173,31 +213,56 @@ void * client_function(){
         return 0;
       }
 
+      /////////////////////////////////////////////////////////////
       //Conexao com outro cliente torrent
-      client_socket = socket(AF_INET, SOCK_STREAM, 0);
+      h = gethostbyname(ip_servidor);
+      printf("arg1 : %s\n", ip_servidor);
+      if(h==NULL) {
+        printf("ERROR: Get host by name\n");
+        exit(1);
+      }
 
-    	if(client_socket <= 0){
-    		printf("Erro no socket: %s\n", strerror(errno));
-    		exit(1);
-    	}
+      //printf("%s: sending data to '%s' (IP : %s) \n", argv[0], h->h_name,
+      // inet_ntoa(*(struct in_addr *)h->h_addr_list[0]));
 
-    	bzero(&serv_addr, sizeof(serv_addr));
+      remoteServAddr.sin_family = h->h_addrtype;
+      memcpy((char *) &remoteServAddr.sin_addr.s_addr,
+       h->h_addr_list[0], h->h_length);
+      remoteServAddr.sin_port = htons(atoi(buffer_rastreador));
+      printf("depos remote server adress\n");
 
-    	serv_addr.sin_family = AF_INET;
-    	serv_addr.sin_port = htons(atoi(buffer_rastreador));
-
-    	connector = connect(client_socket, (const struct sockaddr*) &serv_addr, sizeof(serv_addr));
-    	if(connector < 0){
-    		fprintf(stderr, "ERROR: Não foi possivel conectar ao outro cliente\n");
-    		exit(1);
-    	}else{
-    		printf("Conectado com: %d\n", atoi(buffer_rastreador));
-    	}
+      /* socket creation */
+      client_socket = socket(AF_INET,SOCK_DGRAM,0);
+      if(client_socket<0) {
+        printf("ERROR: cannot open socket \n");
+        exit(1);
+      }
 
 
-      addr_len = sizeof(serv_addr);
+      /* bind any port */
+      serv_addr.sin_family = AF_INET;
+      serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+      serv_addr.sin_port = htons(0);
 
-			escrever_bytes = write(client_socket, nome_arquivo, sizeof(nome_arquivo));
+
+      binder = bind(client_socket, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+      if(binder<0) {
+        printf("ERROR:cannot bind port\n");
+        exit(1);
+      }
+
+    	// connector = connect(client_socket, (const struct sockaddr*) &serv_addr, sizeof(serv_addr));
+    	// if(connector < 0){
+    	// 	fprintf(stderr, "ERROR: Não foi possivel conectar ao outro cliente\n");
+    	// 	exit(1);
+    	// }else{
+    	// 	printf("Conectado com: %d\n", atoi(buffer_rastreador));
+    	// }
+
+      addr_len = sizeof(remoteServAddr);
+
+      escrever_bytes = sendto(client_socket, nome_arquivo, sizeof(nome_arquivo), 0,(struct sockaddr *) &remoteServAddr, sizeof(remoteServAddr));
+      //escrever_bytes = write(client_socket, nome_arquivo, sizeof(nome_arquivo));
 			if(escrever_bytes == 0){
 				printf("Erro em manda o nome do arquivo\n");
 				close(client_socket);
@@ -209,7 +274,7 @@ void * client_function(){
 			while(1){
 
         //Recebe pacote no buffer_entrada
-				bytes_recebidos = recvfrom(client_socket, &buffer_entrada, SizeBuffer+3, 0,(struct sockaddr *) &serv_addr, &addr_len);
+				bytes_recebidos = recvfrom(client_socket, &buffer_entrada, SizeBuffer+3, 0,(struct sockaddr *) &remoteServAddr, &addr_len);
 				fwrite(&buffer_entrada,sizeof(char),bytes_recebidos-3,arquivo_entrada);
 
         //Verifica o numero de sequencia
@@ -218,7 +283,7 @@ void * client_function(){
           printf("ACK ENVIADO!!!\n");
           buffer_resposta[0] = 1;
           buffer_resposta[1] = numero_pacote;
-          resposta = sendto(client_socket, buffer_resposta, 2, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
+          resposta = sendto(client_socket, buffer_resposta, 2, 0,(struct sockaddr *) &remoteServAddr, sizeof(remoteServAddr));
           continue;
         }
 
@@ -228,13 +293,13 @@ void * client_function(){
 
             buffer_resposta[0] = 2;
             buffer_resposta[1] = numero_pacote;
-            resposta = sendto(client_socket, buffer_resposta, 2, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
+            resposta = sendto(client_socket, buffer_resposta, 2, 0,(struct sockaddr *) &remoteServAddr, sizeof(remoteServAddr));
   					continue;
   				} else {
             printf("ACK N = %d ENVIADO!!!\n",numero_pacote);
             buffer_resposta[0] = 1;
             buffer_resposta[1] = numero_pacote;
-            resposta = sendto(client_socket, buffer_resposta, 2, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
+            resposta = sendto(client_socket, buffer_resposta, 2, 0,(struct sockaddr *) &remoteServAddr, sizeof(remoteServAddr));
           }
 
 
@@ -256,10 +321,11 @@ void * client_function(){
 //Função de Servidor
 //==============================================================================
 void * server_function(){
-  int server_socket, binder, listener, porta, bytes_enviados,bytes_restantes, rc;
+  int  binder, listener, porta, bytes_enviados,bytes_restantes, rc;
 	int transferencia_completa = 0, quantidade_bytes_enviados = 0, numero_pacotes_enviados = 0;
   ssize_t ler_bytes, escrever_bytes, resposta;
   socklen_t clilen;
+  struct hostent *h;
 	char buffer_envio[SizeBuffer+3];
 	char contador_pacote = 0;
 
@@ -269,7 +335,7 @@ void * server_function(){
 		exit(1);
 	}
 
-	server_socket = socket(AF_INET, SOCK_STREAM, 0);
+	server_socket = socket(AF_INET, SOCK_DGRAM, 0);
 
 	if(server_socket == 0){
 		printf("Erro na abertura do socket: %s\n", strerror(errno));
@@ -287,8 +353,18 @@ void * server_function(){
 		}while(!accept);
 	}
 
-	bzero(&serv_addr, sizeof(serv_addr));
-
+	// //bzero(&serv_addr, sizeof(serv_addr));
+  // h = gethostbyname(ip_servidor);
+  // printf("arg1 : %s\n", ip_servidor);
+  // if(h==NULL) {
+  //   printf("ERROR: Get host by name\n");
+  //   exit(1);
+  // }
+  //
+  // remoteServAddr.sin_family = h->h_addrtype;
+  // memcpy((char *) &remoteServAddr.sin_addr.s_addr,
+  //  h->h_addr_list[0], h->h_length);
+  // remoteServAddr.sin_port = htons(porta_servidor);
 
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -300,29 +376,31 @@ void * server_function(){
 		exit(1);
 	}
 
-	listener = listen(server_socket, 20);
-
-	if(listener < 0){
-		printf("Erro no Listen: %s\n", strerror(errno));
-		exit(1);
-	}
+	// listener = listen(server_socket, 20);
+  //
+	// if(listener < 0){
+	// 	printf("Erro no Listen: %s\n", strerror(errno));
+	// 	exit(1);
+	// }
 
 	clilen = sizeof(cli_addr);
+  //
+	// sock = accept(server_socket, (struct sockaddr*) &cli_addr, &clilen);
+  //
+	// if(sock <= 0){
+	// 	printf("Erro no accept: %s\n", strerror(errno));
+	// }else{
+	// 	printf("Conexao recebida de %s\n", inet_ntoa(cli_addr.sin_addr));
+	// }
 
-	sock = accept(server_socket, (struct sockaddr*) &cli_addr, &clilen);
-
-	if(sock <= 0){
-		printf("Erro no accept: %s\n", strerror(errno));
-	}else{
-		printf("Conexao recebida de %s\n", inet_ntoa(cli_addr.sin_addr));
-	}
 
 
+	// ler_bytes = read(sock, nome_arquivo, sizeof(nome_arquivo));
+	// if(ler_bytes <= 0){
+	// 	printf("Erro no read: %s\n", strerror(errno));
+	// }
 
-	ler_bytes = read(sock, nome_arquivo, sizeof(nome_arquivo));
-	if(ler_bytes <= 0){
-		printf("Erro no read: %s\n", strerror(errno));
-	}
+  	ler_bytes = recvfrom(server_socket, &nome_arquivo, sizeof(nome_arquivo), 0,(struct sockaddr*) &cli_addr, &clilen);
 
   ler_arquivo(nome_arquivo);
 
@@ -346,7 +424,7 @@ void * server_function(){
 			buffer_envio[SizeBuffer+1] = checksum(buffer_envio, SizeBuffer);
 			buffer_envio[SizeBuffer+2] = contador_pacote;
 
-			bytes_enviados = sendto(sock, buffer_envio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+			bytes_enviados = sendto(server_socket, buffer_envio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
 
 			if(bytes_enviados<0) {
 		    printf("ERROR: Não foi possivel enviar os dados\n");
@@ -368,7 +446,8 @@ void * server_function(){
 
       pthread_cancel(thread_reconhecimento);
       pthread_cancel(thread_temporizador);
-
+      printf("buffer resposta: %d\n",buffer_resposta[0]);
+      printf("recebeu %d\n", recebeu);
       //Verifica o reconhecimento do pacote
       if(buffer_resposta[0] == 1 && recebeu == 1){
         printf("ACK RECEBIDO COM NUMERO DE SEQUENCIA: %d\n", buffer_resposta[1]);
@@ -380,7 +459,7 @@ void * server_function(){
         } else {
           printf("NAK recebido com numero de sequencia: %d\n",buffer_resposta[1] );
         }
-        bytes_enviados = sendto(sock, buffer_envio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+        bytes_enviados = sendto(server_socket, buffer_envio, SizeBuffer+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
       }
 
 			numero_pacotes_enviados++;
@@ -401,7 +480,7 @@ void * server_function(){
 			buffer_envio[bytes_restantes+1] = checksum(buffer_envio, bytes_restantes);
 			buffer_envio[bytes_restantes+2] = contador_pacote;
 
-			bytes_enviados = sendto(sock, buffer_envio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+			bytes_enviados = sendto(server_socket, buffer_envio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
 
 			if(bytes_enviados<0) {
 		    printf("ERROR: Não foi possivel enviar os dados\n");
@@ -436,7 +515,7 @@ void * server_function(){
         } else {
           printf("NAK recebido com numero de sequencia: %d\n",buffer_resposta[1] );
         }
-        bytes_enviados = sendto(sock, buffer_envio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
+        bytes_enviados = sendto(server_socket, buffer_envio, bytes_restantes+3, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
       }
 
 			numero_pacotes_enviados++;
@@ -459,6 +538,7 @@ int main(int argc, char const *argv[]) {
 
   //Definição das portas para conexao
   n_arg = argc;
+  strcpy(ip_servidor,argv[1]);
   porta_servidor_rastreador = 3030;
   porta_servidor = atoi(argv[2]);
 

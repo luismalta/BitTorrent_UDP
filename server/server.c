@@ -23,7 +23,7 @@ int main(int argc, char const *argv[]){
 	char bufferRastreador[100];
 
 while(1){
-	server_socket = socket(AF_INET, SOCK_STREAM, 0);
+	server_socket = socket(AF_INET, SOCK_DGRAM, 0);
 
 	if(server_socket == 0){
 		printf("Erro na abertura do socket: %s\n", strerror(errno));
@@ -40,7 +40,7 @@ while(1){
 		}while(!accept);
 	}
 
-	bzero(&serv_addr, sizeof(serv_addr));
+	//bzero(&serv_addr, sizeof(serv_addr));
 
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -52,22 +52,22 @@ while(1){
 		exit(1);
 	}
 
-	listener = listen(server_socket, 20);
-
-	if(listener < 0){
-		printf("Erro no Listen: %s\n", strerror(errno));
-		exit(1);
-	}
+	// listener = listen(server_socket, 20);
+	//
+	// if(listener < 0){
+	// 	printf("Erro no Listen: %s\n", strerror(errno));
+	// 	exit(1);
+	// }
 
 	clilen = sizeof(cli_addr);
-
-	sock = accept(server_socket, (struct sockaddr*) &cli_addr, &clilen);
-
-	if(sock <= 0){
-		printf("Erro no accept: %s\n", strerror(errno));
-	}else{
-		printf("Conexao recebida de %s\n", inet_ntoa(cli_addr.sin_addr));
-	}
+	//
+	// sock = accept(server_socket, (struct sockaddr*) &cli_addr, &clilen);
+	//
+	// if(sock <= 0){
+	// 	printf("Erro no accept: %s\n", strerror(errno));
+	// }else{
+	// 	printf("Conexao recebida de %s\n", inet_ntoa(cli_addr.sin_addr));
+	// }
 
 
 
@@ -77,18 +77,19 @@ while(1){
 	//
 	// }
 	int addr_len = sizeof(serv_addr);
-	bytesRecebidos = read(sock, bufferRastreador, sizeof(bufferRastreador));
+	ler_bytes = recvfrom(server_socket, &bufferRastreador, sizeof(bufferRastreador), 0,(struct sockaddr*) &cli_addr, &clilen);
+	printf("%s\n\n", bufferRastreador);
 
 	if(!strcmp(bufferRastreador,musica)){
 		printf("%s\n\n", bufferRastreador);
 		printf("%s\n", musica);
-		resposta = sendto(sock, "2021", 4, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
+		resposta = sendto(server_socket, "2021", 4, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
 
 	} else {
 		printf("Arquivo inexistente\n");
-		resposta = sendto(sock, "0000", 4, 0,(struct sockaddr *) &serv_addr, sizeof(serv_addr));
+		resposta = sendto(server_socket, "0000", 4, 0,(struct sockaddr *) &cli_addr, sizeof(cli_addr));
 	}
-	close(sock);
+	//close(sock);
 	close(server_socket);
 }
 
